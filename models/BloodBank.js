@@ -1,22 +1,19 @@
 const { DataTypes, Model } = require('sequelize');
+const sequelize = require('../db');
 const bcrypt = require('bcryptjs');
-const sequelize = require('./db');
 
 class BloodBank extends Model {
   hasBloodAvailable(bloodType, quantity = 1) {
     return this[bloodType] >= quantity;
   }
-
   async updateInventory(bloodType, quantity) {
-    this[bloodType] += quantity;
-    await this.save();
+    this[bloodType] = (this[bloodType] || 0) + quantity;
+    return this.save();
   }
 }
 
 BloodBank.init({
   hospitalName: { type: DataTypes.STRING, allowNull: false, unique: true },
-  latitude: { type: DataTypes.FLOAT, defaultValue: 0 },
-  longitude: { type: DataTypes.FLOAT, defaultValue: 0 },
   address: { type: DataTypes.STRING, allowNull: false },
   phone: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
@@ -29,18 +26,17 @@ BloodBank.init({
   'AB-': { type: DataTypes.INTEGER, defaultValue: 0 },
   'O+': { type: DataTypes.INTEGER, defaultValue: 0 },
   'O-': { type: DataTypes.INTEGER, defaultValue: 0 },
+  latitude: { type: DataTypes.FLOAT, defaultValue: 0 },
+  longitude: { type: DataTypes.FLOAT, defaultValue: 0 },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true }
 }, {
   sequelize,
   modelName: 'BloodBank',
+  timestamps: true,
   hooks: {
-    beforeCreate: async (bank) => {
-      bank.password = await bcrypt.hash(bank.password, 12);
-    },
+    beforeCreate: async (bank) => { bank.password = await bcrypt.hash(bank.password, 12); },
     beforeUpdate: async (bank) => {
-      if (bank.changed('password')) {
-        bank.password = await bcrypt.hash(bank.password, 12);
-      }
+      if (bank.changed('password')) bank.password = await bcrypt.hash(bank.password, 12);
     }
   }
 });

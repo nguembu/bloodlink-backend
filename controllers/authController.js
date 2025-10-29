@@ -1,29 +1,23 @@
-const { User, BloodBank } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const BloodBank = require('../models/BloodBank');
 
-const signToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN
-  });
-};
+const signToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
 
-// Inscription User (donneur/medecin)
+// Inscription User
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, phone, role, ...additionalData } = req.body;
+    const { name, email, password, phone, role, ...data } = req.body;
+    const existing = await User.findOne({ where: { email } });
+    if (existing) return res.status(400).json({ success: false, message: 'Email déjà utilisé.' });
 
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) return res.status(400).json({ success: false, message: 'Utilisateur existe déjà.' });
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password: hashedPassword, phone, role, ...additionalData });
-
+    const hashed = await bcrypt.hash(password, 12);
+    const user = await User.create({ name, email, password: hashed, phone, role, ...data });
     const token = signToken(user.id);
     user.password = undefined;
 
     res.status(201).json({ success: true, message: 'Compte créé', token, data: { user } });
-
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -33,12 +27,8 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ success: false, message: 'Email et mot de passe requis.' });
-
     const user = await User.findOne({ where: { email } });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
-    }
+    if (!user || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
 
     if (!user.isActive) return res.status(401).json({ success: false, message: 'Compte désactivé.' });
 
@@ -59,20 +49,15 @@ exports.login = async (req, res) => {
 exports.registerBloodBank = async (req, res) => {
   try {
     const { hospitalName, email, password, phone, address, latitude, longitude } = req.body;
+    const existing = await BloodBank.findOne({ where: { [Op.or]: [{ email }, { hospitalName }] } });
+    if (existing) return res.status(400).json({ success: false, message: 'Banque déjà existante.' });
 
-    const existingBloodBank = await BloodBank.findOne({ 
-      where: { [Sequelize.Op.or]: [{ email }, { hospitalName }] } 
-    });
-    if (existingBloodBank) return res.status(400).json({ success: false, message: 'Banque de sang existe déjà.' });
+    const hashed = await bcrypt.hash(password, 12);
+    const bank = await BloodBank.create({ hospitalName, email, password: hashed, phone, address, latitude, longitude });
+    const token = signToken(bank.id);
+    bank.password = undefined;
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const bloodBank = await BloodBank.create({ hospitalName, email, password: hashedPassword, phone, address, latitude, longitude });
-
-    const token = signToken(bloodBank.id);
-    bloodBank.password = undefined;
-
-    res.status(201).json({ success: true, message: 'Banque de sang créée', token, data: { bloodBank } });
-
+    res.status(201).json({ success: true, message: 'Banque créée', token, data: { bloodBank: bank } });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -82,20 +67,14 @@ exports.registerBloodBank = async (req, res) => {
 exports.loginBloodBank = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ success: false, message: 'Email et mot de passe requis.' });
+    const bank = await BloodBank.findOne({ where: { email } });
+    if (!bank || !(await bcrypt.compare(password, bank.password))) return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
+    if (!bank.isActive) return res.status(401).json({ success: false, message: 'Compte désactivé.' });
 
-    const bloodBank = await BloodBank.findOne({ where: { email } });
-    if (!bloodBank || !(await bcrypt.compare(password, bloodBank.password))) {
-      return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
-    }
+    const token = signToken(bank.id);
+    bank.password = undefined;
 
-    if (!bloodBank.isActive) return res.status(401).json({ success: false, message: 'Compte désactivé.' });
-
-    const token = signToken(bloodBank.id);
-    bloodBank.password = undefined;
-
-    res.status(200).json({ success: true, message: 'Connexion réussie', token, data: { bloodBank } });
-
+    res.status(200).json({ success: true, message: 'Connexion réussie', token, data: { bloodBank: bank } });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }

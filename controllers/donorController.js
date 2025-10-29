@@ -1,35 +1,52 @@
-const { Alert, User, BloodBank } = require('../models');
+const { Op } = require('sequelize');
+const Alert = require('../models/Alert');
+const BloodBank = require('../models/BloodBank');
+const User = require('../models/User');
+const AlertResponse = require('../models/AlertResponse');
 const { findUsersInRadius } = require('../utils/geolocation');
 
-// Obtenir alertes à proximité
+// Obtenir les alertes à proximité
 exports.getNearbyAlerts = async (req, res) => {
   try {
+    let userCoords;
     const { latitude, longitude, maxDistance = 50 } = req.query;
-    const userCoords = latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [req.user.longitude, req.user.latitude];
-    if (!userCoords) return res.status(400).json({ success: false, message: 'Localisation requise.' });
 
-    const bloodBanks = await BloodBank.findAll({ 
-      where: findUsersInRadius(userCoords[1], userCoords[0], maxDistance)
+    if (latitude && longitude) {
+      userCoords = [parseFloat(longitude), parseFloat(latitude)];
+    } else if (req.user.latitude && req.user.longitude) {
+      userCoords = [req.user.longitude, req.user.latitude];
+    } else {
+      return res.status(400).json({ success: false, message: 'Localisation requise.' });
+    }
+
+    // Trouver banques de sang proches
+    const bloodBanks = await BloodBank.findAll();
+    const nearbyBanks = bloodBanks.filter(bank => {
+      const distance = findUsersInRadius(userCoords[1], userCoords[0], 0, bank.latitude, bank.longitude);
+      return distance <= maxDistance;
     });
 
-    const bloodBankIds = bloodBanks.map(bank => bank.id);
+    const bloodBankIds = nearbyBanks.map(bank => bank.id);
 
     const alerts = await Alert.findAll({
-      where: { bloodBankId: bloodBankIds, status: 'pending', expiresAt: { [Sequelize.Op.gt]: new Date() } },
+      where: { bloodBankId: { [Op.in]: bloodBankIds }, status: 'pending', expiresAt: { [Op.gt]: new Date() } },
       include: [
-        { model: BloodBank, attributes: ['hospitalName','address','phone'] },
-        { model: User, as: 'doctor', attributes: ['name','hospital'] }
+        { model: BloodBank, as: 'bloodBank', attributes: ['id','hospitalName','address','phone'] },
+        { model: User, as: 'doctor', attributes: ['id','name','hospital'] }
       ],
       order: [['urgency','DESC'], ['createdAt','DESC']]
     });
 
-    res.json({ success: true, data: { alerts } });
+    const alertsJson = alerts.map(a => ({ ...a.toJSON(), _id: a.id }));
+
+    res.json({ success: true, data: { alerts: alertsJson } });
+
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Mettre à jour localisation
+// Mettre à jour localisation du donneur
 exports.updateDonorLocation = async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
@@ -37,22 +54,24 @@ exports.updateDonorLocation = async (req, res) => {
     req.user.longitude = longitude;
     await req.user.save();
 
-    res.json({ success: true, message: 'Localisation mise à jour', data: { user: req.user } });
+    res.json({ success: true, message: 'Localisation mise à jour avec succès.', data: { user: req.user } });
+
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Mettre à jour statut
+// Mettre à jour statut du donneur
 exports.updateDonorStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    if (!['available','unavailable'].includes(status)) return res.status(400).json({ success: false, message: 'Statut invalide.' });
+    if (!['available', 'unavailable'].includes(status)) return res.status(400).json({ success: false, message: 'Statut invalide.' });
 
     req.user.status = status;
     await req.user.save();
 
     res.json({ success: true, message: `Statut mis à jour: ${status}`, data: { user: req.user } });
+
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
