@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../config/db');
 
 // Calcul de distance entre deux points (Haversine)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {

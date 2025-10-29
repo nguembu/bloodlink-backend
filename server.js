@@ -6,7 +6,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./db'); // SQLite database
+const db = require('./config/db'); // SQLite database
 const app = express();
 
 // ================================

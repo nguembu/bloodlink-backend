@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../config/db');
 
 // Simuler l'envoi de notifications push
 const sendPushNotification = (user, alert, type, message) => {

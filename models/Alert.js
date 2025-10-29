@@ -1,6 +1,6 @@
 // models/Alert.js
 const { DataTypes, Model } = require('sequelize');
-const sequelize = require('../db');
+const sequelize = require('../config/db');
 const User = require('./User');
 const BloodBank = require('./BloodBank');
 const AlertResponse = require('./AlertResponse');
