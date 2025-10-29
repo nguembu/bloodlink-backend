@@ -1,109 +1,59 @@
-const Alert = require('../models/Alert');
-const User = require('../models/User');
-const BloodBank = require('../models/BloodBank');
+const { Alert, User, BloodBank } = require('../models');
+const { findUsersInRadius } = require('../utils/geolocation');
 
-// Donneur : Obtenir les alertes à proximité
+// Obtenir alertes à proximité
 exports.getNearbyAlerts = async (req, res) => {
   try {
     const { latitude, longitude, maxDistance = 50 } = req.query;
+    const userCoords = latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [req.user.longitude, req.user.latitude];
+    if (!userCoords) return res.status(400).json({ success: false, message: 'Localisation requise.' });
 
-    let userCoords;
-    if (latitude && longitude) {
-      userCoords = [parseFloat(longitude), parseFloat(latitude)];
-    } else if (req.user.location && req.user.location.coordinates) {
-      userCoords = req.user.location.coordinates;
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Localisation requise.'
-      });
-    }
-
-    // Trouver les banques de sang à proximité
-    const bloodBanks = await BloodBank.find({
-      location: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: userCoords
-          },
-          $maxDistance: maxDistance * 1000
-        }
-      },
-      isActive: true
+    const bloodBanks = await BloodBank.findAll({ 
+      where: findUsersInRadius(userCoords[1], userCoords[0], maxDistance)
     });
 
-    const bloodBankIds = bloodBanks.map(bank => bank._id);
+    const bloodBankIds = bloodBanks.map(bank => bank.id);
 
-    // Trouver les alertes actives de ces banques
-    const alerts = await Alert.find({
-      bloodBank: { $in: bloodBankIds },
-      status: 'pending', // Seulement les alertes en attente
-      expiresAt: { $gt: new Date() }
-    })
-    .populate('bloodBank', 'hospitalName address phone')
-    .populate('doctor', 'name hospital')
-    .sort({ urgency: -1, createdAt: -1 });
-
-    res.json({
-      success: true,
-      data: { alerts }
+    const alerts = await Alert.findAll({
+      where: { bloodBankId: bloodBankIds, status: 'pending', expiresAt: { [Sequelize.Op.gt]: new Date() } },
+      include: [
+        { model: BloodBank, attributes: ['hospitalName','address','phone'] },
+        { model: User, as: 'doctor', attributes: ['name','hospital'] }
+      ],
+      order: [['urgency','DESC'], ['createdAt','DESC']]
     });
 
+    res.json({ success: true, data: { alerts } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Mettre à jour la localisation du donneur
+// Mettre à jour localisation
 exports.updateDonorLocation = async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
+    req.user.latitude = latitude;
+    req.user.longitude = longitude;
+    await req.user.save();
 
-    await req.user.updateLocation(latitude, longitude);
-
-    res.json({
-      success: true,
-      message: 'Localisation mise à jour avec succès.',
-      data: { user: req.user }
-    });
-
+    res.json({ success: true, message: 'Localisation mise à jour', data: { user: req.user } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Mettre à jour le statut du donneur
+// Mettre à jour statut
 exports.updateDonorStatus = async (req, res) => {
   try {
     const { status } = req.body;
-
-    if (!['available', 'unavailable'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Statut invalide.'
-      });
-    }
+    if (!['available','unavailable'].includes(status)) return res.status(400).json({ success: false, message: 'Statut invalide.' });
 
     req.user.status = status;
     await req.user.save();
 
-    res.json({
-      success: true,
-      message: `Statut mis à jour: ${status}`,
-      data: { user: req.user }
-    });
-
+    res.json({ success: true, message: `Statut mis à jour: ${status}`, data: { user: req.user } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };

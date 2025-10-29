@@ -1,109 +1,43 @@
-const BloodBank = require('../models/BloodBank');
-const bcrypt = require('bcryptjs');
+const { BloodBank } = require('../models');
 
-// Mettre à jour l'inventaire de sang
+// Mettre à jour inventaire
 exports.updateInventory = async (req, res) => {
   try {
     const { bloodType, quantity } = req.body;
+    if (!bloodType || quantity === undefined) return res.status(400).json({ success: false, message: 'Type et quantité requis.' });
 
-    if (!bloodType || quantity === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'Type de sang et quantité requis.'
-      });
-    }
+    req.bloodBank[bloodType] += quantity;
+    await req.bloodBank.save();
 
-    await req.bloodBank.updateInventory(bloodType, quantity);
-
-    res.json({
-      success: true,
-      message: 'Inventaire mis à jour avec succès.',
-      data: { bloodBank: req.bloodBank }
-    });
-
+    res.json({ success: true, message: 'Inventaire mis à jour', data: { bloodBank: req.bloodBank } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Obtenir l'inventaire
+// Obtenir inventaire
 exports.getInventory = async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        inventory: req.bloodBank.bloodInventory,
-        bloodBank: {
-          hospitalName: req.bloodBank.hospitalName,
-          address: req.bloodBank.address,
-          phone: req.bloodBank.phone
-        }
-      }
-    });
-
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
+  res.json({ success: true, data: { inventory: req.bloodBank.bloodInventory, bloodBank: { hospitalName: req.bloodBank.hospitalName, address: req.bloodBank.address, phone: req.bloodBank.phone } } });
 };
 
-// Obtenir le profil de la bloodbank
+// Profil banque
 exports.getBloodBankProfile = async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        bloodBank: req.bloodBank
-      }
-    });
-
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
+  res.json({ success: true, data: { bloodBank: req.bloodBank } });
 };
 
-// Trouver les banques de sang à proximité (publique)
+// Banques à proximité (publique)
 exports.findNearbyBloodBanks = async (req, res) => {
   try {
     const { latitude, longitude, maxDistance = 50 } = req.query;
+    if (!latitude || !longitude) return res.status(400).json({ success: false, message: 'Latitude et longitude requises.' });
 
-    if (!latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        message: 'Latitude et longitude requises.'
-      });
-    }
-
-    const bloodBanks = await BloodBank.find({
-      location: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
-          },
-          $maxDistance: maxDistance * 1000
-        }
-      },
-      isActive: true
-    }).select('-password'); // Exclure le mot de passe
-
-    res.json({
-      success: true,
-      data: { bloodBanks }
+    const bloodBanks = await BloodBank.findAll({
+      where: { latitude: { [Sequelize.Op.between]: [latitude-maxDistance, latitude+maxDistance] }, longitude: { [Sequelize.Op.between]: [longitude-maxDistance, longitude+maxDistance] }, isActive: true },
+      attributes: { exclude: ['password'] }
     });
 
+    res.json({ success: true, data: { bloodBanks } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };

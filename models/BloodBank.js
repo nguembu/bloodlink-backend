@@ -1,77 +1,48 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const sequelize = require('./db');
 
-const bloodBankSchema = new mongoose.Schema({
-  hospitalName: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  location: {
-    type: {
-      type: String,
-      enum: ['Point'],
-      default: 'Point'
-    },
-    coordinates: {
-      type: [Number],
-      required: false,
-      default: [0, 0]
-    }
-  },
-  address: {
-    type: String,
-    required: true
-  },
-  phone: {
-    type: String,
-    required: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  password: {
-    type: String,
-    required: true
-  },
-  bloodInventory: {
-    'A+': { type: Number, default: 0 },
-    'A-': { type: Number, default: 0 },
-    'B+': { type: Number, default: 0 },
-    'B-': { type: Number, default: 0 },
-    'AB+': { type: Number, default: 0 },
-    'AB-': { type: Number, default: 0 },
-    'O+': { type: Number, default: 0 },
-    'O-': { type: Number, default: 0 }
-  },
-  isActive: {
-    type: Boolean,
-    default: true
+class BloodBank extends Model {
+  hasBloodAvailable(bloodType, quantity = 1) {
+    return this[bloodType] >= quantity;
   }
+
+  async updateInventory(bloodType, quantity) {
+    this[bloodType] += quantity;
+    await this.save();
+  }
+}
+
+BloodBank.init({
+  hospitalName: { type: DataTypes.STRING, allowNull: false, unique: true },
+  latitude: { type: DataTypes.FLOAT, defaultValue: 0 },
+  longitude: { type: DataTypes.FLOAT, defaultValue: 0 },
+  address: { type: DataTypes.STRING, allowNull: false },
+  phone: { type: DataTypes.STRING, allowNull: false },
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  password: { type: DataTypes.STRING, allowNull: false },
+  'A+': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'A-': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'B+': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'B-': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'AB+': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'AB-': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'O+': { type: DataTypes.INTEGER, defaultValue: 0 },
+  'O-': { type: DataTypes.INTEGER, defaultValue: 0 },
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'BloodBank',
+  hooks: {
+    beforeCreate: async (bank) => {
+      bank.password = await bcrypt.hash(bank.password, 12);
+    },
+    beforeUpdate: async (bank) => {
+      if (bank.changed('password')) {
+        bank.password = await bcrypt.hash(bank.password, 12);
+      }
+    }
+  }
 });
 
-bloodBankSchema.index({ location: '2dsphere' });
-
-// Middleware de hachage du mot de passe
-bloodBankSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-// Méthode pour vérifier la disponibilité du sang
-bloodBankSchema.methods.hasBloodAvailable = function(bloodType, quantity = 1) {
-  return this.bloodInventory[bloodType] >= quantity;
-};
-
-// Méthode pour mettre à jour l'inventaire
-bloodBankSchema.methods.updateInventory = function(bloodType, quantity) {
-  this.bloodInventory[bloodType] += quantity;
-  return this.save();
-};
-
-module.exports = mongoose.model('BloodBank', bloodBankSchema);
+module.exports = BloodBank;

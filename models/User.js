@@ -1,106 +1,49 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const sequelize = require('./db');
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true
-  },
-  password: {
-    type: String,
-    required: true,
-    minlength: 6
-  },
-  role: {
-    type: String,
-    enum: ['donor', 'doctor'], // Retirer bloodbank
-    required: true
-  },
-  phone: {
-    type: String,
-    required: true
-  },
-  // Champs spécifiques aux donneurs
-  bloodType: {
-    type: String,
-    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
-    required: function() { return this.role === 'donor'; }
-  },
-  status: {
-    type: String,
-    enum: ['available', 'unavailable'],
-    default: 'available'
-  },
-  medicalHistory: {
-    type: String,
-    default: ''
-  },
-  location: {
-    type: {
-      type: String,
-      enum: ['Point'],
-      default: 'Point'
-    },
-    coordinates: {
-      type: [Number],
-      default: [0, 0]
-    }
-  },
-  // Champs spécifiques aux médecins
-  hospital: {
-    type: String,
-    required: function() { return this.role === 'doctor'; }
-  },
-  cni: {
-    type: String,
-    required: function() { return this.role === 'doctor'; }
-  },
-  licenseNumber: {
-    type: String,
-    required: function() { return this.role === 'doctor'; }
-  },
-  // Champs généraux
-  fcmToken: String,
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  lastLogin: Date
+class User extends Model {
+  async correctPassword(candidatePassword) {
+    return await bcrypt.compare(candidatePassword, this.password);
+  }
+
+  async updateLocation(latitude, longitude) {
+    this.latitude = latitude;
+    this.longitude = longitude;
+    await this.save();
+  }
+}
+
+User.init({
+  name: { type: DataTypes.STRING, allowNull: false },
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  password: { type: DataTypes.STRING, allowNull: false },
+  role: { type: DataTypes.ENUM('donor', 'doctor'), allowNull: false },
+  phone: { type: DataTypes.STRING, allowNull: false },
+  bloodType: { type: DataTypes.ENUM('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-') },
+  status: { type: DataTypes.ENUM('available', 'unavailable'), defaultValue: 'available' },
+  medicalHistory: { type: DataTypes.TEXT, defaultValue: '' },
+  latitude: { type: DataTypes.FLOAT, defaultValue: 0 },
+  longitude: { type: DataTypes.FLOAT, defaultValue: 0 },
+  hospital: DataTypes.STRING,
+  cni: DataTypes.STRING,
+  licenseNumber: DataTypes.STRING,
+  fcmToken: DataTypes.STRING,
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  lastLogin: DataTypes.DATE
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'User',
+  hooks: {
+    beforeCreate: async (user) => {
+      user.password = await bcrypt.hash(user.password, 12);
+    },
+    beforeUpdate: async (user) => {
+      if (user.changed('password')) {
+        user.password = await bcrypt.hash(user.password, 12);
+      }
+    }
+  }
 });
 
-// Index pour les recherches géospatiales
-userSchema.index({ location: '2dsphere' });
-userSchema.index({ role: 1 });
-userSchema.index({ bloodType: 1 });
-
-// Middleware de hachage du mot de passe
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-// Méthode pour vérifier le mot de passe
-userSchema.methods.correctPassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
-// Méthode pour mettre à jour la localisation
-userSchema.methods.updateLocation = function(latitude, longitude) {
-  this.location = {
-    type: 'Point',
-    coordinates: [longitude, latitude]
-  };
-  return this.save();
-};
-
-module.exports = mongoose.model('User', userSchema);
+module.exports = User;

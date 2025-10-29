@@ -1,17 +1,16 @@
-// utils/emailService.js
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // ou votre service email
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    pass: process.env.EMAIL_PASS // mot de passe d'application Gmail recommandé
   }
 });
 
-exports.sendPasswordResetEmail = async (email, token) => {
+const sendPasswordResetEmail = async (email, token) => {
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-  
+
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
@@ -33,3 +32,5 @@ exports.sendPasswordResetEmail = async (email, token) => {
     throw error;
   }
 };
+
+module.exports = { sendPasswordResetEmail };

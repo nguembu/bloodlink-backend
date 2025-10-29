@@ -1,66 +1,41 @@
-const Notification = require('../models/Notification');
+const db = require('../db');
 
 // Simuler l'envoi de notifications push
-const sendPushNotification = async (user, alert, type, message) => {
-  try {
-    let title = 'BloodLink Notification';
-    
-    switch (type) {
-      case 'NEW_ALERT':
-        title = '🚨 Nouvelle alerte de sang';
-        break;
-      case 'ALERT_CANCELLED':
-        title = '✅ Alerte annulée';
-        break;
-      case 'BLOOD_REQUEST':
-        title = '🏥 Demande de sang';
-        break;
-      case 'DONOR_ACCEPTED':
-        title = '👍 Donneur disponible';
-        break;
-      case 'BLOOD_RECEIVED':
-        title = '💉 Sang reçu';
-        break;
-    }
+const sendPushNotification = (user, alert, type, message) => {
+  const titleMap = {
+    NEW_ALERT: '🚨 Nouvelle alerte de sang',
+    ALERT_CANCELLED: '✅ Alerte annulée',
+    BLOOD_REQUEST: '🏥 Demande de sang',
+    DONOR_ACCEPTED: '👍 Donneur disponible',
+    BLOOD_RECEIVED: '💉 Sang reçu'
+  };
+  const title = titleMap[type] || 'BloodLink Notification';
 
-    // En développement, on simule l'envoi
-    console.log(`📤 Notification to user ${user._id}: ${title} - ${message}`);
+  console.log(`📤 Notification to user ${user.id}: ${title} - ${message}`);
 
-    // Sauvegarder la notification dans la base de données
-    const notification = await Notification.create({
-      user: user._id,
-      alert: alert ? alert._id : null,
-      type,
-      title,
-      message,
-      data: {
-        alertId: alert ? alert._id.toString() : null,
-        bloodType: alert ? alert.bloodType : null
-      }
-    });
+  const data = JSON.stringify({
+    alertId: alert ? alert.id : null,
+    bloodType: alert ? alert.bloodType : null
+  });
 
-    return notification;
-  } catch (error) {
-    console.error('Error sending notification:', error);
-    return false;
-  }
+  const stmt = db.prepare(`
+    INSERT INTO notifications (userId, alertId, type, title, message, data, read)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+  `);
+  const info = stmt.run(user.id, alert ? alert.id : null, type, title, message, data);
+  return { id: info.lastInsertRowid, userId: user.id, alertId: alert ? alert.id : null, type, title, message, data };
 };
 
-// Obtenir l'historique des notifications
-const getNotificationHistory = async (userId) => {
-  return await Notification.find({ user: userId })
-    .populate('alert')
-    .sort({ createdAt: -1 })
-    .limit(50);
+// Historique notifications
+const getNotificationHistory = (userId) => {
+  const stmt = db.prepare('SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC LIMIT 50');
+  return stmt.all(userId);
 };
 
 // Marquer comme lu
-const markAsRead = async (notificationId) => {
-  return await Notification.findByIdAndUpdate(
-    notificationId, 
-    { read: true },
-    { new: true }
-  );
+const markAsRead = (notificationId) => {
+  db.prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(notificationId);
+  return db.prepare('SELECT * FROM notifications WHERE id = ?').get(notificationId);
 };
 
 module.exports = {

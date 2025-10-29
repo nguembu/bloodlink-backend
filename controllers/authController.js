@@ -1,5 +1,4 @@
-const User = require('../models/User');
-const BloodBank = require('../models/BloodBank');
+const { User, BloodBank } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -14,138 +13,68 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, phone, role, ...additionalData } = req.body;
 
-    // Vérifier si l'utilisateur existe déjà
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Un utilisateur avec cet email existe déjà.'
-      });
-    }
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) return res.status(400).json({ success: false, message: 'Utilisateur existe déjà.' });
 
-    // Créer l'utilisateur
-    const user = await User.create({
-      name,
-      email,
-      password,
-      phone,
-      role,
-      ...additionalData
-    });
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const user = await User.create({ name, email, password: hashedPassword, phone, role, ...additionalData });
 
-    const token = signToken(user._id);
-
-    // Ne pas renvoyer le mot de passe
+    const token = signToken(user.id);
     user.password = undefined;
 
-    res.status(201).json({
-      success: true,
-      message: 'Compte créé avec succès',
-      token,
-      data: { user }
-    });
+    res.status(201).json({ success: true, message: 'Compte créé', token, data: { user } });
 
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
-// Connexion User (donneur/medecin)
+// Connexion User
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Email et mot de passe requis.' });
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Veuillez fournir un email et un mot de passe.'
-      });
+    const user = await User.findOne({ where: { email } });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
     }
 
-    const user = await User.findOne({ email }).select('+password');
-    if (!user || !(await user.correctPassword(password))) {
-      return res.status(401).json({
-        success: false,
-        message: 'Email ou mot de passe incorrect.'
-      });
-    }
+    if (!user.isActive) return res.status(401).json({ success: false, message: 'Compte désactivé.' });
 
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Votre compte a été désactivé.'
-      });
-    }
-
-    // Mettre à jour la dernière connexion
     user.lastLogin = new Date();
     await user.save();
 
-    const token = signToken(user._id);
+    const token = signToken(user.id);
     user.password = undefined;
 
-    res.status(200).json({
-      success: true,
-      message: 'Connexion réussie',
-      token,
-      data: { user }
-    });
+    res.status(200).json({ success: true, message: 'Connexion réussie', token, data: { user } });
 
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
 // Inscription BloodBank
 exports.registerBloodBank = async (req, res) => {
   try {
-    const { hospitalName, email, password, phone, address, location } = req.body;
+    const { hospitalName, email, password, phone, address, latitude, longitude } = req.body;
 
     const existingBloodBank = await BloodBank.findOne({ 
-      $or: [{ email }, { hospitalName }] 
+      where: { [Sequelize.Op.or]: [{ email }, { hospitalName }] } 
     });
-    
-    if (existingBloodBank) {
-      return res.status(400).json({
-        success: false,
-        message: 'Une banque de sang avec cet email ou nom existe déjà.'
-      });
-    }
+    if (existingBloodBank) return res.status(400).json({ success: false, message: 'Banque de sang existe déjà.' });
 
-    // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 12);
+    const bloodBank = await BloodBank.create({ hospitalName, email, password: hashedPassword, phone, address, latitude, longitude });
 
-    const bloodBank = await BloodBank.create({
-      hospitalName,
-      email,
-      password: hashedPassword,
-      phone,
-      address,
-      location
-    });
-
-    const token = signToken(bloodBank._id);
-
+    const token = signToken(bloodBank.id);
     bloodBank.password = undefined;
 
-    res.status(201).json({
-      success: true,
-      message: 'Banque de sang créée avec succès',
-      token,
-      data: { bloodBank }
-    });
+    res.status(201).json({ success: true, message: 'Banque de sang créée', token, data: { bloodBank } });
 
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
@@ -153,61 +82,31 @@ exports.registerBloodBank = async (req, res) => {
 exports.loginBloodBank = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Email et mot de passe requis.' });
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Veuillez fournir un email et un mot de passe.'
-      });
-    }
-
-    const bloodBank = await BloodBank.findOne({ email }).select('+password');
-    
+    const bloodBank = await BloodBank.findOne({ where: { email } });
     if (!bloodBank || !(await bcrypt.compare(password, bloodBank.password))) {
-      return res.status(401).json({
-        success: false,
-        message: 'Email ou mot de passe incorrect.'
-      });
+      return res.status(401).json({ success: false, message: 'Email ou mot de passe incorrect.' });
     }
 
-    if (!bloodBank.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Votre compte a été désactivé.'
-      });
-    }
+    if (!bloodBank.isActive) return res.status(401).json({ success: false, message: 'Compte désactivé.' });
 
-    const token = signToken(bloodBank._id);
+    const token = signToken(bloodBank.id);
     bloodBank.password = undefined;
 
-    res.status(200).json({
-      success: true,
-      message: 'Connexion réussie',
-      token,
-      data: { bloodBank }
-    });
+    res.status(200).json({ success: true, message: 'Connexion réussie', token, data: { bloodBank } });
 
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
 // Profil User
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    
-    res.json({
-      success: true,
-      data: { user }
-    });
+    const user = await User.findByPk(req.user.id);
+    res.json({ success: true, data: { user } });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };

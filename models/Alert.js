@@ -1,93 +1,55 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const sequelize = require('./db');
+const User = require('./User');
+const BloodBank = require('./BloodBank');
 
-const alertSchema = new mongoose.Schema({
-  doctor: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  bloodBank: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'BloodBank',
-    required: true
-  },
-  bloodType: {
-    type: String,
-    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
-    required: true
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 1
-  },
-  urgency: {
-    type: String,
-    enum: ['low', 'medium', 'high', 'critical'],
-    default: 'medium'
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'approved', 'rejected', 'fulfilled', 'cancelled'],
-    default: 'pending'
-  },
-  patientInfo: {
-    name: String,
-    age: Number,
-    condition: String
-  },
-  // Réponses des donneurs
-  responses: [{
-    donor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'accepted', 'declined']
-    },
-    respondedAt: {
-      type: Date,
-      default: Date.now
-    },
-    message: String
-  }],
-  // Donneur qui a accepté l'alerte
-  acceptedDonor: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  expiresAt: {
-    type: Date,
-    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 heures
+class Alert extends Model {
+  async cancel() {
+    this.status = 'cancelled';
+    await this.save();
   }
+
+  async fulfill() {
+    this.status = 'fulfilled';
+    await this.save();
+  }
+
+  async acceptDonor(donorId) {
+    this.acceptedDonorId = donorId;
+    this.status = 'fulfilled';
+    await this.save();
+  }
+}
+
+Alert.init({
+  doctorId: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: 'id' } },
+  bloodBankId: { type: DataTypes.INTEGER, allowNull: false, references: { model: BloodBank, key: 'id' } },
+  bloodType: { type: DataTypes.ENUM('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'), allowNull: false },
+  quantity: { type: DataTypes.INTEGER, allowNull: false },
+  urgency: { type: DataTypes.ENUM('low', 'medium', 'high', 'critical'), defaultValue: 'medium' },
+  status: { type: DataTypes.ENUM('pending','approved','rejected','fulfilled','cancelled'), defaultValue: 'pending' },
+  patientName: DataTypes.STRING,
+  patientAge: DataTypes.INTEGER,
+  patientCondition: DataTypes.STRING,
+  acceptedDonorId: { type: DataTypes.INTEGER, references: { model: User, key: 'id' } },
+  expiresAt: { type: DataTypes.DATE, defaultValue: () => new Date(Date.now() + 24*60*60*1000) }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'Alert'
 });
 
-// Index pour les recherches
-alertSchema.index({ status: 1 });
-alertSchema.index({ bloodType: 1 });
-alertSchema.index({ doctor: 1 });
-alertSchema.index({ bloodBank: 1 });
+// Table pour les réponses des donneurs
+const AlertResponse = sequelize.define('AlertResponse', {
+  alertId: { type: DataTypes.INTEGER, references: { model: Alert, key: 'id' } },
+  donorId: { type: DataTypes.INTEGER, references: { model: User, key: 'id' } },
+  status: { type: DataTypes.ENUM('pending','accepted','declined'), defaultValue: 'pending' },
+  message: DataTypes.TEXT,
+  respondedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+});
 
-// Méthode pour annuler l'alerte
-alertSchema.methods.cancel = function() {
-  this.status = 'cancelled';
-  return this.save();
-};
+Alert.hasMany(AlertResponse, { foreignKey: 'alertId' });
+AlertResponse.belongsTo(Alert, { foreignKey: 'alertId' });
+User.hasMany(AlertResponse, { foreignKey: 'donorId' });
+AlertResponse.belongsTo(User, { foreignKey: 'donorId' });
 
-// Méthode pour valider la réception
-alertSchema.methods.fulfill = function() {
-  this.status = 'fulfilled';
-  return this.save();
-};
-
-// Méthode pour accepter un donneur et annuler pour les autres
-alertSchema.methods.acceptDonor = function(donorId) {
-  this.acceptedDonor = donorId;
-  this.status = 'fulfilled'; // On marque comme rempli dès qu'un donneur accepte
-  return this.save();
-};
-
-module.exports = mongoose.model('Alert', alertSchema);
+module.exports = { Alert, AlertResponse };

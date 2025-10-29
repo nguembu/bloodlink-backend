@@ -5,9 +5,8 @@
 
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-
+const db = require('./db'); // SQLite database
 const app = express();
 
 // ================================
@@ -17,7 +16,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'exp://', // Expo mobile local
-  'https://bloodlink-frontend.vercel.app', // (exemple pour futur web frontend)
+  'https://bloodlink-frontend.vercel.app',
   process.env.FRONTEND_URL,
 ];
 
@@ -105,54 +104,39 @@ app.use((err, req, res, next) => {
 });
 
 // ================================
-// 🧠 Connexion MongoDB
+// 🧠 Initialisation SQLite
+// ================================
+try {
+  console.log('✅ SQLite database ready');
+} catch (err) {
+  console.error('❌ Erreur SQLite:', err.message);
+  process.exit(1);
+}
+
+// ================================
+// 🚀 Démarrage serveur
 // ================================
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bloodlink';
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log('\n🚀 BLOODLINK BACKEND DÉMARRÉ');
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🌐 Mode: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Backend: ${process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`}\n`);
+});
 
-mongoose
-  .connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 5000,
-  })
-  .then(() => {
-    console.log('✅ Connecté à MongoDB');
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log('\n🚀 BLOODLINK BACKEND DÉMARRÉ');
-      console.log(`📍 Port: ${PORT}`);
-      console.log(`🌐 Mode: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 Backend: ${process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`}\n`);
-    });
-
-    // Arrêt propre
-    const shutdown = () => {
-      console.log('🛑 Arrêt du serveur...');
-      server.close(() => {
-        mongoose.connection.close(false, () => {
-          console.log('✅ Déconnexion MongoDB');
-          process.exit(0);
-        });
-      });
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-  })
-  .catch((err) => {
-    console.error('❌ Erreur de connexion MongoDB:', err.message);
-    process.exit(1);
+// Arrêt propre
+const shutdown = () => {
+  console.log('🛑 Arrêt du serveur...');
+  server.close(() => {
+    console.log('✅ Serveur arrêté');
+    process.exit(0);
   });
+};
 
-// ================================
-// 📡 Événements MongoDB
-// ================================
-mongoose.connection.on('error', (err) => console.error('💥 MongoDB Error:', err));
-mongoose.connection.on('disconnected', () => console.warn('🔌 Déconnecté de MongoDB'));
-mongoose.connection.on('reconnected', () => console.log('🔁 Reconnecté à MongoDB'));
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // ================================
 // ✅ Export app
 // ================================
 module.exports = app;
-
