@@ -7,9 +7,20 @@ class User extends Model {
   async correctPassword(candidatePassword) {
     return await bcrypt.compare(candidatePassword, this.password);
   }
+
+  async updateLocation(lat, lon) {
+    this.latitude = lat;
+    this.longitude = lon;
+    return this.save();
+  }
 }
 
 User.init({
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
   password: { type: DataTypes.STRING, allowNull: false },
@@ -29,6 +40,7 @@ User.init({
 }, {
   sequelize,
   modelName: 'User',
+  tableName: 'users',
   timestamps: true,
   hooks: {
     beforeCreate: async (user) => {
@@ -41,12 +53,5 @@ User.init({
     }
   }
 });
-
-// Méthode pour mettre à jour localisation
-User.prototype.updateLocation = async function(lat, lon) {
-  this.latitude = lat;
-  this.longitude = lon;
-  return this.save();
-};
 
 module.exports = User;

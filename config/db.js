@@ -4,7 +4,9 @@ const path = require('path');
 // Crée la connexion SQLite
 const sequelize = new Sequelize({
   dialect: 'sqlite',
-  storage: path.join(__dirname, 'database.sqlite'), // fichier SQLite local
+  storage: process.env.NODE_ENV === 'production' 
+    ? '/tmp/database.sqlite' // Sur Render, utilisez /tmp
+    : path.join(__dirname, 'database.sqlite'),
   logging: false // mettre à true pour debug SQL
 });
 

@@ -1,3 +1,4 @@
+// models/BloodBank.js
 const { DataTypes, Model } = require('sequelize');
 const sequelize = require('../config/db');
 const bcrypt = require('bcryptjs');
@@ -6,6 +7,7 @@ class BloodBank extends Model {
   hasBloodAvailable(bloodType, quantity = 1) {
     return this[bloodType] >= quantity;
   }
+  
   async updateInventory(bloodType, quantity) {
     this[bloodType] = (this[bloodType] || 0) + quantity;
     return this.save();
@@ -13,6 +15,11 @@ class BloodBank extends Model {
 }
 
 BloodBank.init({
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   hospitalName: { type: DataTypes.STRING, allowNull: false, unique: true },
   address: { type: DataTypes.STRING, allowNull: false },
   phone: { type: DataTypes.STRING, allowNull: false },
@@ -32,11 +39,16 @@ BloodBank.init({
 }, {
   sequelize,
   modelName: 'BloodBank',
+  tableName: 'bloodbanks',
   timestamps: true,
   hooks: {
-    beforeCreate: async (bank) => { bank.password = await bcrypt.hash(bank.password, 12); },
+    beforeCreate: async (bank) => { 
+      bank.password = await bcrypt.hash(bank.password, 12); 
+    },
     beforeUpdate: async (bank) => {
-      if (bank.changed('password')) bank.password = await bcrypt.hash(bank.password, 12);
+      if (bank.changed('password')) {
+        bank.password = await bcrypt.hash(bank.password, 12);
+      }
     }
   }
 });
